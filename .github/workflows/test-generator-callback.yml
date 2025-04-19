@@ -1,0 +1,57 @@
+name: Process Test Generation Callback
+
+on:
+  repository_dispatch:
+    types: [test-generator-callback]
+
+jobs:
+  process-callback:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.client_payload.head_branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Save diff to file
+        run: |
+          echo '${{ github.event.client_payload.diff }}' > test_changes.diff
+      
+      - name: Apply test changes
+        run: |
+          # Configure git
+          git config --global user.name "Stitch"
+          git config --global user.email "stitch@stacklok.com"
+          
+          # Apply the diff
+          git apply --whitespace=fix test_changes.diff
+          
+          # Add all files, including those created by the patch
+          git add .
+          
+          # Only commit if there are changes
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Add automated tests for PR #${{ github.event.client_payload.pr_number }}"
+            git push origin ${{ github.event.client_payload.head_branch }}
+          fi
+      
+      - name: Comment on PR
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.createComment({
+              issue_number: ${{ github.event.client_payload.pr_number }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ Automated tests have been added to this PR!\n\n' + 
+                    '### Test Generation Results\n\n' + 
+                    '${{ github.event.client_payload.result }}'
+            })
