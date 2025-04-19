@@ -1,0 +1,105 @@
+name: Process Test Generation Callback
+
+on:
+  repository_dispatch:
+    types: [test-generator-callback]
+
+jobs:
+  process-callback:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Generate Repository Token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: ${{ github.repository }}
+      
+      - name: Download PR Info
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-${{ github.event.client_payload.pr_number }}-callback-${{ github.event.client_payload.callback_id }}
+          path: /tmp/artifacts
+      
+      - name: Setup Test Processing
+        id: setup
+        run: |
+          # Read PR info
+          PR_INFO=$(cat /tmp/artifacts/pr_info.json)
+          PR_NUMBER=$(echo $PR_INFO | jq -r '.pr_number')
+          HEAD_BRANCH=$(echo $PR_INFO | jq -r '.head_branch')
+          HEAD_SHA=$(echo $PR_INFO | jq -r '.head_sha')
+          
+          echo "PR_NUMBER=${PR_NUMBER}" >> $GITHUB_ENV
+          echo "HEAD_BRANCH=${HEAD_BRANCH}" >> $GITHUB_ENV
+          echo "HEAD_SHA=${HEAD_SHA}" >> $GITHUB_ENV
+          
+          # Create a temporary file to store the response data
+          echo "${CALLBACK_DATA}" > /tmp/callback_data.json
+      
+      - name: Process Diff and Create Tests
+        id: process-diff
+        run: |
+          # Extract the diff from the callback data
+          DIFF=$(jq -r '.diff' /tmp/callback_data.json)
+          RESULT_MESSAGE=$(jq -r '.result' /tmp/callback_data.json)
+          
+          # Create a new branch for the tests
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          
+          # Use the PR head as the base
+          git fetch origin ${{ env.HEAD_BRANCH }}
+          git checkout -b auto-tests-pr-${{ env.PR_NUMBER }} ${{ env.HEAD_SHA }}
+          
+          # Process the diff to extract file changes
+          echo "$DIFF" > /tmp/changes.diff
+          
+          # Apply the diff directly
+          git apply --whitespace=nowarn /tmp/changes.diff
+          
+          # Check if there are changes to commit
+          if [[ -n $(git status -s) ]]; then
+            git add .
+            git commit -m "Add automated tests for PR #${{ env.PR_NUMBER }}"
+            git push origin auto-tests-pr-${{ env.PR_NUMBER }}
+            
+            # Create a pull request to merge tests into the original PR branch
+            PR_URL=$(curl -X POST \
+              -H "Authorization: Bearer ${{ steps.generate-token.outputs.token }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d '{
+                "title": "Automated Tests for PR #${{ env.PR_NUMBER }}",
+                "body": "This PR adds automated tests generated for PR #${{ env.PR_NUMBER }}.\n\n'"$RESULT_MESSAGE"'",
+                "head": "auto-tests-pr-${{ env.PR_NUMBER }}",
+                "base": "${{ env.HEAD_BRANCH }}"
+              }' \
+              "${{ github.event.repository.url }}/pulls" | jq -r '.html_url')
+            
+            echo "TESTS_PR_URL=${PR_URL}" >> $GITHUB_ENV
+          else
+            echo "No test changes to commit"
+          fi
+        env:
+          CALLBACK_DATA: ${{ toJson(github.event.client_payload) }}
+      
+      - name: Comment on original PR
+        if: env.TESTS_PR_URL != ''
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ steps.generate-token.outputs.token }}
+          script: |
+            github.rest.issues.createComment({
+              issue_number: ${{ env.PR_NUMBER }},
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '✅ Automated tests have been generated! [See the tests PR](${{ env.TESTS_PR_URL }})'
+            })

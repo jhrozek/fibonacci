@@ -1,0 +1,104 @@
+name: Request Test Generation
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths-ignore:
+      - '**/*.test.js'
+      - '**/*.spec.js'
+      - '**/*.test.ts'
+      - '**/*.spec.ts'
+      - '**/*_test.go'
+      - '**/*_test.py'
+
+jobs:
+  request-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Get changed files
+        id: changed-files
+        run: |
+          CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | grep -v "test\|spec" | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          echo "CHANGED_FILES=${CHANGED_FILES}" >> $GITHUB_ENV
+      
+      - name: Generate Repository Token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+          repositories: ${{ github.repository }}
+      
+      - name: Request test generation
+        id: request-tests
+        run: |
+          # Create a unique callback ID for this PR
+          CALLBACK_ID=$(echo ${{ github.repository }}-pr-${{ github.event.pull_request.number }}-$(date +%s) | shasum -a 256 | cut -d ' ' -f 1)
+          echo "CALLBACK_ID=${CALLBACK_ID}" >> $GITHUB_ENV
+          
+          # Store PR info in GitHub Action cache for the callback
+          echo '{
+            "pr_number": "${{ github.event.pull_request.number }}",
+            "repo": "${{ github.repository }}",
+            "base_branch": "${{ github.event.pull_request.base.ref }}",
+            "head_branch": "${{ github.event.pull_request.head.ref }}",
+            "head_sha": "${{ github.event.pull_request.head.sha }}"
+          }' > /tmp/pr_info.json
+          
+          # Upload PR info to GitHub Actions artifacts
+          mkdir -p /tmp/artifacts
+          cp /tmp/pr_info.json /tmp/artifacts/
+          
+          # Make the API request
+          curl -X POST ${{ secrets.CODE_ASSISTANT_API_URL }} \
+            -H "Authorization: Bearer ${{ secrets.CODE_ASSISTANT_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "prompt": "Generate appropriate tests for the changed files in PR #${{ github.event.pull_request.number }}. Focus on testing new functionality, edge cases, and regression tests.",
+              "repo": "github.com/${{ github.repository }}",
+              "pattern": "worker-judge",
+              "files": ${{ env.CHANGED_FILES }},
+              "callback": {
+                "url": "${{ secrets.GITHUB_API_URL }}/repos/${{ github.repository }}/dispatches",
+                "headers": {
+                  "Authorization": "Bearer ${{ steps.generate-token.outputs.token }}",
+                  "Accept": "application/vnd.github.v3+json"
+                },
+                "data": {
+                  "event_type": "test-generator-callback",
+                  "client_payload": {
+                    "callback_id": "'${CALLBACK_ID}'",
+                    "pr_number": "${{ github.event.pull_request.number }}",
+                    "repository": "${{ github.repository }}"
+                  }
+                }
+              }
+            }'
+      
+      - name: Upload callback info
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-${{ github.event.pull_request.number }}-callback-${{ env.CALLBACK_ID }}
+          path: /tmp/artifacts/
+          retention-days: 1
+      
+      - name: PR Comment
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🧪 Test generation requested! Tests will be added to this PR once processing is complete.'
+            })
