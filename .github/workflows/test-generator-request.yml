@@ -1,0 +1,73 @@
+name: Request Test Generation
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths-ignore:
+      - '**/*_test.py'
+      - '**/*test_*.py'
+
+jobs:
+  request-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Generate Repository Token
+        id: generate-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.APP_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+      
+      - name: Request test generation
+        id: request-tests
+        run: |
+          curl -X POST ${{ secrets.STITCH_API_URL }}/single-agent \
+            -H "Content-Type: application/json" \
+            -d '{
+              "prompt": "Generate appropriate unit tests for the changes between these two commits.",
+              "model": "claude-3-7-sonnet-latest",
+              "repo": "git@github.com/${{ github.repository }}",
+              "context": {
+                "type": "changes",
+                "base_ref": "${{ github.event.pull_request.base.sha }}",
+                "head_ref": "${{ github.event.pull_request.head.sha }}",
+              },
+              "callback": {
+                "url": "api.github.com/repos/${{ github.repository }}/dispatches",
+                "headers": {
+                  "Authorization": "Bearer ${{ steps.generate-token.outputs.token }}",
+                  "Accept": "application/vnd.github.v3+json",
+                  "Content-Type": "application/json"
+                },
+                "data": {
+                  "event_type": "test-generator-callback",
+                  "client_payload": {
+                    "pr_number": "${{ github.event.pull_request.number }}",
+                    "repository": "${{ github.repository }}",
+                    "head_branch": "${{ github.event.pull_request.head.ref }}",
+                    "head_sha": "${{ github.event.pull_request.head.sha }}"
+                  }
+                }
+              }
+            }'
+      
+      # - name: PR Comment
+      #   uses: actions/github-script@v6
+      #   with:
+      #     github-token: ${{ secrets.GITHUB_TOKEN }}
+      #     script: |
+      #       github.rest.issues.createComment({
+      #         issue_number: context.issue.number,
+      #         owner: context.repo.owner,
+      #         repo: context.repo.repo,
+      #         body: '🧪 Test generation requested! Tests will be added to this PR once processing is complete.'
+      #       })
