@@ -30,7 +30,7 @@ jobs:
       - name: Request test generation
         id: request-tests
         run: |
-          curl -X POST ${{ secrets.STITCH_API_URL }}/single-agent \
+          curl -vv -X POST https://jackal-busy-mantis.ngrok-free.app/single-agent \
             -H "Content-Type: application/json" \
             -d '{
               "prompt": "Generate appropriate unit tests for the changes between these two commits.",
