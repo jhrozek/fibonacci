@@ -60,14 +60,9 @@ jobs:
               }
             }'
       
-      # - name: PR Comment
-      #   uses: actions/github-script@v6
-      #   with:
-      #     github-token: ${{ secrets.GITHUB_TOKEN }}
-      #     script: |
-      #       github.rest.issues.createComment({
-      #         issue_number: context.issue.number,
-      #         owner: context.repo.owner,
-      #         repo: context.repo.repo,
-      #         body: '🧪 Test generation requested! Tests will be added to this PR once processing is complete.'
-      #       })
+      - name: Comment on PR
+        uses: peter-evans/create-or-update-comment@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          body: |
+            ✅ Automated tests have been reqeusted for this PR to be added by Stitch!
