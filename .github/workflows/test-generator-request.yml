@@ -44,7 +44,7 @@ jobs:
               "callback": {
                 "url": "https://api.github.com/repos/${{ github.repository }}/dispatches",
                 "headers": {
-                  "Authorization": "Bearer ${{ steps.generate-token.outputs.token }}",
+                  "Authorization": "token ${{ steps.generate-token.outputs.token }}",
                   "Accept": "application/vnd.github.v3+json",
                   "Content-Type": "application/json"
                 },
