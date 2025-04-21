@@ -18,9 +18,12 @@ jobs:
           ref: ${{ github.event.client_payload.head_branch }}
           token: ${{ secrets.GITHUB_TOKEN }}
       
-      - name: Save diff to file
-        run: |
-          echo '${{ github.event.client_payload.diff }}' > test_changes.diff
+      # - name: Save diff to file
+      #   uses: actions/github-script@v6
+      #   with:
+      #     script: |
+      #       const fs = require('fs');
+      #       fs.writeFileSync('test_changes.diff', context.payload.client_payload.diff);
       
       - name: Apply test changes
         run: |
@@ -29,7 +32,11 @@ jobs:
           git config --global user.email "stitch@stacklok.com"
           
           # Apply the diff
-          git apply --whitespace=fix test_changes.diff
+          #git apply --whitespace=fix test_changes.diff
+          # Apply the diff directly using a heredoc
+          git apply --whitespace=fix << 'EODIFF'
+          ${{ github.event.client_payload.diff }}
+          EODIFF
           
           # Add all files, including those created by the patch
           git add .
