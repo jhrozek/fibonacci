@@ -1,6 +1,27 @@
 def fibonacci(n):
-    raise NotImplementedError("Implement me")
-
+    """
+    Calculate the nth Fibonacci number iteratively.
+    
+    Args:
+        n (int): The position in the Fibonacci sequence (0-indexed)
+    
+    Returns:
+        int: The nth Fibonacci number
+    
+    Raises:
+        ValueError: If n is negative
+    """
+    if n < 0:
+        raise ValueError("Input must be a non-negative integer")
+    
+    if n <= 1:
+        return n
+    
+    a, b = 0, 1
+    for _ in range(2, n + 1):
+        a, b = b, a + b
+    
+    return b
 
 def fibonacci_sequence(length):
     """
