@@ -1,5 +1,21 @@
 def fibonacci(n):
-    raise NotImplementedError("Implement me")
+    """
+    Calculate the n-th Fibonacci number.
+    
+    Args:
+        n (int): The position in the Fibonacci sequence (0-based)
+    
+    Returns:
+        int: The n-th Fibonacci number
+    
+    Raises:
+        ValueError: If n is negative
+    """
+    if n < 0:
+        raise ValueError("Position must be a non-negative integer")
+    if n <= 1:
+        return n
+    return fibonacci(n - 1) + fibonacci(n - 2)
 
 
 def fibonacci_sequence(length):
