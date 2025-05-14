@@ -1,24 +1,5 @@
 def fibonacci(n):
-    """
-    Calculate the nth Fibonacci number.
-
-    Args:
-        n (int): The position in the Fibonacci sequence (0-indexed)
-
-    Returns:
-        int: The nth Fibonacci number
-
-    Note:
-        fibonacci(0) = 0
-        fibonacci(1) = 1
-        fibonacci(n) = fibonacci(n-1) + fibonacci(n-2) for n > 1
-    """
-    if n <= 0:
-        return 0
-    elif n == 1:
-        return 1
-    else:
-        return fibonacci(n - 1) + fibonacci(n - 2)
+    raise NotImplementedError("Implement me")
 
 
 def fibonacci_sequence(length):
